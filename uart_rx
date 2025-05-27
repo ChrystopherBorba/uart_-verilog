@@ -1,0 +1,70 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 05/24/2025 10:17:56 PM
+// Design Name: 
+// Module Name: uart_rx
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module uart_rx(
+    input  wire       clk,   // clock do sistema (100 MHz)
+    input  wire       rx,    // linha RX da UART
+    output reg  [7:0] led    // dados recebidos (8 bits)
+);
+
+    parameter baud = 115200;
+    localparam clk_per_bit = 100_000_000 / baud;
+    localparam shift = clk_per_bit / 2;
+
+    reg [15:0] count = 0;
+    reg [3:0]  bit = 0;
+    reg        start = 0;
+    reg [7:0]  buffer = 0;
+
+    always @(posedge clk) begin
+        if (!start) begin
+            // Aguarda o meio do start bit
+            if (rx == 0) begin
+                if (count == shift) begin
+                    start <= 1;
+                    count <= 0;
+                    bit <= 0;
+                end else begin
+                    count <= count + 1;
+                end
+            end else begin
+                count <= 0;
+            end
+        end else begin
+            if (count == clk_per_bit) begin
+                buffer[bit] <= rx;    // salva bit no buffer
+                bit <= bit + 1;
+                count <= 0;
+            end else begin
+                count <= count + 1;
+            end
+
+            if (bit == 8) begin
+                led <= buffer;        // transfere para os LEDs
+                start <= 0;
+                bit <= 0;
+                count <= 0;
+            end
+        end
+    end
+
+endmodule
