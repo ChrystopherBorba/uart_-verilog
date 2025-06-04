@@ -23,7 +23,9 @@
 module uart_rx(
     input  wire       clk,   // clock do sistema (100 MHz)
     input  wire       rx,    // linha RX da UART
-    output reg  [7:0] led    // dados recebidos (8 bits)
+    output reg  [7:0] data,    // dados recebidos (8 bits)
+    output reg        busy,
+    output reg        data_ready
 );
 
     parameter baud = 115200;
@@ -32,15 +34,17 @@ module uart_rx(
 
     reg [15:0] count = 0;
     reg [3:0]  bit = 0;
-    reg        start = 0;
+    reg        busy = 0;
     reg [7:0]  buffer = 0;
+    reg        data_ready = 0;
 
     always @(posedge clk) begin
-        if (!start) begin
+        if (!busy) begin
+        data_ready <= 0;
             // Aguarda o meio do start bit
             if (rx == 0) begin
                 if (count == shift) begin
-                    start <= 1;
+                    busy <= 1;
                     count <= 0;
                     bit <= 0;
                 end else begin
@@ -59,8 +63,9 @@ module uart_rx(
             end
 
             if (bit == 8) begin
-                led <= buffer;        // transfere para os LEDs
-                start <= 0;
+                data <= buffer; 
+                data_ready <= 1;       // transfere para os LEDs
+                busy <= 0;
                 bit <= 0;
                 count <= 0;
             end
