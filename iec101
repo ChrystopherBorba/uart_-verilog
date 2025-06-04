@@ -1,73 +1,31 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 05/24/2025 10:17:56 PM
-// Design Name: 
-// Module Name: uart_rx
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
 
-
-module uart_rx(
-    input  wire       clk,   // clock do sistema (100 MHz)
-    input  wire       rx,    // linha RX da UART
-    output reg  [7:0] data,    // dados recebidos (8 bits)
-    output reg        busy,
-    output reg        data_ready
+module iec101(
+    input wire read,
+    input wire [7:0] data,
+    output reg [47:0] frame,
+    output reg valid
 );
 
-    parameter baud = 115200;
-    localparam clk_per_bit = 100_000_000 / baud;
-    localparam shift = clk_per_bit / 2;
+    reg [2:0] byte_count = 0;
+    reg [7:0] buffer [0:5];
 
-    reg [15:0] count = 0;
-    reg [3:0]  bit = 0;
-    reg        busy = 0;
-    reg [7:0]  buffer = 0;
-    reg        data_ready = 0;
+    always @(posedge read) begin
+ 
 
-    always @(posedge clk) begin
-        if (!busy) begin
-        data_ready <= 0;
-            // Aguarda o meio do start bit
-            if (rx == 0) begin
-                if (count == shift) begin
-                    busy <= 1;
-                    count <= 0;
-                    bit <= 0;
-                end else begin
-                    count <= count + 1;
-                end
+        buffer[byte_count] <= data;
+        byte_count <= byte_count + 1;
+
+        if (byte_count == 5) begin
+            // Agora os 6 bytes foram recebidos, então monta o frame
+            frame <= {buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], data};  // 'data' é o 6º byte
+            byte_count <= 0;
+
+            // Verifica campo de controle (por ex: byte[2])
+            if (buffer[0] == 8'b00010000) begin  // ou buffer[2] dependendo da posição correta
+                valid <= 1;
             end else begin
-                count <= 0;
-            end
-        end else begin
-            if (count == clk_per_bit) begin
-                buffer[bit] <= rx;    // salva bit no buffer
-                bit <= bit + 1;
-                count <= 0;
-            end else begin
-                count <= count + 1;
-            end
-
-            if (bit == 8) begin
-                data <= buffer; 
-                data_ready <= 1;       // transfere para os LEDs
-                busy <= 0;
-                bit <= 0;
-                count <= 0;
+                valid <= 0;
             end
         end
     end
