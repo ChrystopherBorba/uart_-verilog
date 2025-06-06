@@ -2,47 +2,109 @@
 
 module iec101(
     input  wire       clk,
-    input  wire       read,        // pulso: novo byte em `data`
-    input  wire [7:0] data,        // byte recebido
-    output reg  [7:0] out_byte,    // byte de saída
-    output reg        out_valid    // indica que out_byte é válido
+    input  wire       read,
+    input  wire [7:0] data,
+    output reg  [7:0] out_byte,
+    output reg        out_valid
 );
 
-    parameter MAX_FRAME = 255;
+    parameter MAX_FRAME = 260; // aumente se frames maiores forem esperados
 
+    // Máquina de estados
+    reg [2:0] state;
     reg [7:0] buffer [0:MAX_FRAME-1];
-    reg [5:0] byte_count = 0;
-    reg [5:0] send_count = 0;
-    reg       collecting = 1;
-    reg       sending = 0;
+    reg [7:0] len;         // comprimento dos dados
+    reg [7:0] data_count;  // quantos bytes já coletados na etapa de dados
+    reg [7:0] buf_count;   // quantos bytes já armazenados no buffer
+    reg [7:0] send_count;  // quantos bytes já enviados
+
+    // Estados
+    localparam WAIT_START   = 3'd0,
+               GOT_68_1     = 3'd1,
+               GOT_LEN1     = 3'd2,
+               GOT_LEN2     = 3'd3,
+               GOT_68_2     = 3'd4,
+               COLLECT_DATA = 3'd5,
+               GOT_16       = 3'd6,
+               SENDING      = 3'd7;
+
+    initial begin
+        state = WAIT_START;
+        len = 8'd0;
+        data_count = 8'd0;
+        buf_count = 8'd0;
+        send_count = 8'd0;
+        out_valid = 1'b0;
+        out_byte = 8'd0;
+    end
 
     always @(posedge clk) begin
-        if (collecting) begin
-            if (read) begin
-                buffer[byte_count] <= data;
-                if (data == 8'b00010110) begin // Terminador encontrado
-                    collecting <= 0;
-                    sending    <= 1;
-                    send_count <= 0;
-                end else if (byte_count < (MAX_FRAME-1)) begin
-                    byte_count <= byte_count + 1;
+        out_valid <= 1'b0; // padrão: saída inválida
+
+        case (state)
+            WAIT_START: begin
+                if (read && data == 8'h68) begin
+                    buffer[0] <= data;
+                    buf_count <= 1;
+                    state <= GOT_68_1;
                 end
             end
-            out_valid <= 0;
-        end else if (sending) begin
-            out_byte  <= buffer[send_count];
-            out_valid <= 1;
-            send_count <= send_count + 1;
-            if (send_count == byte_count) begin
-                // Enviou todos os bytes (inclusive o terminador)
-                sending    <= 0;
-                collecting <= 1;
-                byte_count <= 0;
-                out_valid  <= 0; // Opcional: desativa out_valid no ciclo seguinte ao último byte
+            GOT_68_1: begin
+                if (read) begin
+                    buffer[buf_count] <= data;
+                    len <= data;
+                    buf_count <= buf_count + 1;
+                    state <= GOT_LEN1;
+                end
             end
-        end else begin
-            out_valid <= 0;
-        end
+            GOT_LEN1: begin
+                if (read) begin
+                    buffer[buf_count] <= data;
+                    buf_count <= buf_count + 1;
+                    state <= GOT_LEN2;
+                end
+            end
+            GOT_LEN2: begin
+                if (read) begin
+                    buffer[buf_count] <= data;
+                    buf_count <= buf_count + 1;
+                    if (data == 8'h68) begin
+                        data_count <= 0;
+                        state <= COLLECT_DATA;
+                    end else begin
+                        state <= WAIT_START; // erro, reinicia
+                    end
+                end
+            end
+            COLLECT_DATA: begin
+                if (read) begin
+                    buffer[buf_count] <= data;
+                    buf_count <= buf_count + 1;
+                    data_count <= data_count + 1;
+                    if (data_count + 1 == len) begin
+                        state <= GOT_16;
+                    end
+                end
+            end
+            GOT_16: begin
+                if (read && data == 8'h16) begin
+                    buffer[buf_count] <= data;
+                    buf_count <= buf_count + 1;
+                    send_count <= 0;
+                    state <= SENDING;
+                end
+            end
+            SENDING: begin
+                out_byte  <= buffer[send_count];
+                out_valid <= 1'b1;
+                send_count <= send_count + 1;
+                if (send_count + 1 == buf_count) begin
+                    state <= WAIT_START;
+                    buf_count <= 0;
+                end
+            end
+            default: state <= WAIT_START;
+        endcase
     end
 
 endmodule
