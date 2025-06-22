@@ -1,0 +1,91 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 06/09/2025 12:20:48 AM
+// Design Name: 
+// Module Name: uart_tx
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module uart_tx(
+    input  wire        clk,
+    input  wire [7:0]  data_in,
+    input  wire        queue_empty,
+    output reg         tx,
+    output reg         busy,
+    output wire        tx_ready // novo sinal: alto quando pode receber um novo byte
+);
+
+    parameter BAUD = 112500;
+    localparam FREQUENCY = 100_000_000;
+    localparam CLK_PER_BAUD = FREQUENCY / BAUD;
+    localparam IDLE = 2'd0, START = 2'd1, DATA = 2'd2, STOP = 2'd3;
+
+    reg [1:0] state = IDLE;
+    reg [3:0] bit_cnt;
+    reg [15:0] clk_cnt;
+    reg [7:0] buff;
+
+    assign tx_ready = (state == IDLE); // pronto para receber novo dado apenas no estado IDLE
+
+    always @(posedge clk) begin
+        case (state)
+            IDLE: begin
+                tx   <= 1'b1;
+                busy <= 1'b0;
+                if (!queue_empty) begin
+                    buff <= data_in;
+                    state       <= START;
+                    clk_cnt     <= 0;
+                    busy        <= 1'b1;
+                end
+            end
+            START: begin
+                tx <= 1'b0;
+                if (clk_cnt == CLK_PER_BAUD) begin
+                    clk_cnt <= 0;
+                    bit_cnt <= 0;
+                    state   <= DATA;
+                end else begin
+                    clk_cnt <= clk_cnt + 1;
+                end
+            end
+            DATA: begin
+                tx <= buff[bit_cnt];
+                if (clk_cnt == CLK_PER_BAUD) begin
+                    clk_cnt <= 0;
+                    if (bit_cnt == 7) begin
+                        state <= STOP;
+                    end else begin
+                        bit_cnt <= bit_cnt + 1;
+                    end
+                end else begin
+                    clk_cnt <= clk_cnt + 1;
+                end
+            end
+            STOP: begin
+                tx <= 1'b1;
+                if (clk_cnt == CLK_PER_BAUD) begin
+                    clk_cnt <= 0;
+                    state   <= IDLE;
+                    busy    <= 1'b0;
+                end else begin
+                    clk_cnt <= clk_cnt + 1;
+                end
+            end
+        endcase
+    end
+endmodule
