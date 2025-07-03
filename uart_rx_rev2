@@ -1,0 +1,69 @@
+module uart_tx(
+    input  wire        clk,
+    input  wire [7:0]  data_in,
+    input  wire        empty,
+    output reg         tx,
+    output wire         rd_en
+);
+
+    parameter BAUD = 112500;
+    localparam FREQUENCY = 100_000_000;
+    localparam CLK_PER_BAUD = FREQUENCY / BAUD;
+    localparam IDLE = 3'd0, WAIT_VALID = 3'd1 ,START = 3'd2, DATA = 3'd3, STOP = 3'd4;
+
+    reg [2:0] state = IDLE;
+    reg [3:0] bit_cnt;
+    reg [15:0] clk_cnt;
+    reg [7:0] buff;
+    
+    assign rd_en = (state == IDLE); // pronto para receber novo dado apenas no estado IDLE
+    
+    always @(posedge clk) begin
+        
+        case (state)
+            IDLE: begin
+                tx   <= 1'b1;
+                if (!empty) begin
+                    state <= WAIT_VALID;
+                end
+            end    
+            WAIT_VALID: begin
+                buff <= data_in; // agora o dado está válido
+                clk_cnt <= 0;
+                state <= START; // espera o dado aparecer
+            end
+            START: begin
+                tx <= 1'b0;
+                if (clk_cnt == CLK_PER_BAUD) begin
+                    clk_cnt <= 0;
+                    bit_cnt <= 0;
+                    state   <= DATA;
+                end else begin
+                    clk_cnt <= clk_cnt + 1;
+                end
+            end
+            DATA: begin
+                tx <= buff[bit_cnt];
+                if (clk_cnt == CLK_PER_BAUD) begin
+                    clk_cnt <= 0;
+                    if (bit_cnt == 7) begin
+                        state <= STOP;
+                    end else begin
+                        bit_cnt <= bit_cnt + 1;
+                    end
+                end else begin
+                    clk_cnt <= clk_cnt + 1;
+                end
+            end
+            STOP: begin
+                tx <= 1'b1;
+                if (clk_cnt == CLK_PER_BAUD) begin
+                    clk_cnt <= 0;
+                    state   <= IDLE;
+                end else begin
+                    clk_cnt <= clk_cnt + 1;
+                end
+            end
+        endcase
+    end
+endmodule
